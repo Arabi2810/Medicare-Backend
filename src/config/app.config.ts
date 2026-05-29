@@ -9,6 +9,7 @@ export const appConfig = (() => ({
   PORT: getEnv("PORT", "8080"),
   BASE_PATH: getEnv("BASE_PATH", "/api"),
   GEMINI_API_KEY: getEnv("GEMINI_API_KEY"),
+  GROQ_API_KEY: getEnv("GROQ_API_KEY"),
 
   // Upload
   UPLOAD_DIR: getEnv("UPLOAD_DIR", "uploads"),
