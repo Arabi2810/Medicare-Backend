@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "node16",
+    "lib": ["ES2020"],
+    "outDir": "./dist",        // Compiled JS files will go here
+    "rootDir": "./src",        // All source TS files are here
+    "strict": true,            // Enforce strict type-checking
+    "esModuleInterop": true,   // Allow ES module imports
+    "skipLibCheck": true,      // Skip library checks for faster builds
+    "forceConsistentCasingInFileNames": true, // Prevent issues with casing in imports
+    "resolveJsonModule": true, // Allow importing .json files
+    "moduleResolution": "node16", // Use Node.js module resolution
+    "declaration": true,       // Generate .d.ts declaration files
+    "declarationMap": true,    // Generate declaration maps
+    "sourceMap": true          // Generate source maps for debugging
+  },
+  "include": ["src/**/*", "index.ts"], // Include all TS files in src and index.ts
+  "exclude": ["node_modules", "dist"]  // Exclude node_modules and dist from being compiled
+}
