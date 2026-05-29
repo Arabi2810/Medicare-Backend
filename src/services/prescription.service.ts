@@ -13,9 +13,9 @@ import { ReminderModel } from "../models/reminder.model";
 import { parseDosageSchedule } from "../lib/dosageParser";
 import { PrescriptionFeedbackModel } from "../models/PrescriptionFeedback.model";
 import PDFDocument from 'pdfkit';
+import { callGroq } from "../lib/groqClient";
 
 
-// Parse prescription text using Gemini API
 
 const normalizeBanglaDosage = (dosage: string): string => {
   if (!dosage || typeof dosage !== "string") {
@@ -35,7 +35,7 @@ const normalizeBanglaDosage = (dosage: string): string => {
   return result;
 };
 
-// Parse prescription text using Gemini API
+
 export const prescriptionParseService = async (
   text: string
 ): Promise<ParsedPrescription> => {
@@ -44,82 +44,20 @@ export const prescriptionParseService = async (
   }
 
   const prompt = getPrompt(text);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${appConfig.GEMINI_API_KEY}`;
-
-  const payload = {
-    contents: [
-      {
-        parts: [
-          {
-            text: prompt,
-          },
-        ],
-      },
-    ],
-    generationConfig: {
-      temperature: 0.1,
-      topP: 0.95,
-      topK: 40,
-      maxOutputTokens: 2048,
-    },
-  };
 
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(30000),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(
-        `Gemini API error: ${response.status} - ${error || response.statusText}`
-      );
-    }
-
-    const data: any = await response.json();
-
-    if (
-      !data.candidates ||
-      !Array.isArray(data.candidates) ||
-      !data.candidates[0]
-    ) {
-      throw new Error(
-        "Invalid response structure from Gemini API: no candidates"
-      );
-    }
-
-    if (!data.candidates[0].content || !data.candidates[0].content.parts) {
-      throw new Error("Invalid response structure from Gemini API: no content");
-    }
-
-    const responseText = data.candidates[0].content.parts[0].text;
-
-    if (!responseText || typeof responseText !== "string") {
-      throw new Error("Gemini API returned empty or invalid text");
-    }
+    const responseText = await callGroq(prompt, 2048);
 
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error(
-        "Could not parse JSON from prescription text. Response: " +
-          responseText.substring(0, 200)
-      );
+      throw new Error("Could not parse JSON from prescription text. Response: " + responseText.substring(0, 200));
     }
 
     let parsedData: any;
     try {
       parsedData = JSON.parse(jsonMatch[0]);
     } catch (parseError) {
-      throw new Error(
-        `Failed to parse JSON: ${
-          parseError instanceof Error ? parseError.message : "Unknown error"
-        }`
-      );
+      throw new Error(`Failed to parse JSON: ${parseError instanceof Error ? parseError.message : "Unknown error"}`);
     }
 
     if (!validatePrescriptionParsedData(parsedData)) {
@@ -131,7 +69,6 @@ export const prescriptionParseService = async (
         .filter((med: any) => med.name && med.name.trim().length > 0)
         .map((med: any) => ({
           ...med,
-          // Normalize Bangla digits to English in dosage
           dosage: med.dosage ? normalizeBanglaDosage(med.dosage) : med.dosage,
         }));
     }
@@ -150,113 +87,6 @@ export const prescriptionParseService = async (
 
 
 
-// export const prescriptionParseService = async (
-//   text: string
-// ): Promise<ParsedPrescription> => {
-//   if (!text || text.trim().length === 0) {
-//     throw new Error("Prescription text is empty");
-//   }
-
-//   const prompt = getPrompt(text);
-//   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${appConfig.GEMINI_API_KEY}`;
-
-//   const payload = {
-//     contents: [
-//       {
-//         parts: [
-//           {
-//             text: prompt,
-//           },
-//         ],
-//       },
-//     ],
-//     generationConfig: {
-//       temperature: 0.1,
-//       topP: 0.95,
-//       topK: 40,
-//       maxOutputTokens: 2048,
-//     },
-//   };
-
-//   try {
-//     const response = await fetch(url, {
-//       method: "POST",
-//       headers: {
-//         "Content-Type": "application/json",
-//       },
-//       body: JSON.stringify(payload),
-//       signal: AbortSignal.timeout(30000),
-//     });
-
-//     if (!response.ok) {
-//       const error = await response.text();
-//       throw new Error(
-//         `Gemini API error: ${response.status} - ${error || response.statusText}`
-//       );
-//     }
-
-//     const data: any = await response.json();
-
-//     if (
-//       !data.candidates ||
-//       !Array.isArray(data.candidates) ||
-//       !data.candidates[0]
-//     ) {
-//       throw new Error(
-//         "Invalid response structure from Gemini API: no candidates"
-//       );
-//     }
-
-//     if (!data.candidates[0].content || !data.candidates[0].content.parts) {
-//       throw new Error("Invalid response structure from Gemini API: no content");
-//     }
-
-//     const responseText = data.candidates[0].content.parts[0].text;
-
-//     if (!responseText || typeof responseText !== "string") {
-//       throw new Error("Gemini API returned empty or invalid text");
-//     }
-
-//     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-//     if (!jsonMatch) {
-//       throw new Error(
-//         "Could not parse JSON from prescription text. Response: " +
-//           responseText.substring(0, 200)
-//       );
-//     }
-
-//     let parsedData: any;
-//     try {
-//       parsedData = JSON.parse(jsonMatch[0]);
-//     } catch (parseError) {
-//       throw new Error(
-//         `Failed to parse JSON: ${
-//           parseError instanceof Error ? parseError.message : "Unknown error"
-//         }`
-//       );
-//     }
-
-//     if (!validatePrescriptionParsedData(parsedData)) {
-//       throw new Error("Parsed data does not match required schema");
-//     }
-
-//     if (parsedData.medicines.length > 0) {
-//       parsedData.medicines = parsedData.medicines.filter(
-//         (med: any) => med.name && med.name.trim().length > 0
-//       );
-//     }
-
-//     parsedData.symptoms = [...new Set(parsedData.symptoms.filter(Boolean))];
-//     parsedData.diagnosis = [...new Set(parsedData.diagnosis.filter(Boolean))];
-
-//     return parsedData as ParsedPrescription;
-//   } catch (error) {
-//     if (error instanceof Error) {
-//       throw new Error(`Prescription parsing failed: ${error.message}`);
-//     }
-//     throw new Error("Prescription parsing failed: Unknown error");
-//   }
-// };
 
 // Helper: Calculate end date from duration string
 const calculateEndDate = (duration: string): Date | null => {
@@ -806,21 +636,7 @@ export const getHealthInsightsService = async (
     recentDiagnoses,
   };
 }
-// export const prescriptionGetByIdService = async (
-//   prescriptionId: string,
-//   userId: string
-// ) => {
-//   const prescription = await PrescriptionModel.findOne({
-//     _id: new Types.ObjectId(prescriptionId),
-//     userId: new Types.ObjectId(userId),
-//   }).lean();
 
-//   return prescription;
-// };
-
-/**
- * NEW: Get prescription details with related data (reminders, feedback, test status)
- */
 export const getPrescriptionDetailsService = async (
   prescriptionId: string,
   userId: string
@@ -2083,50 +1899,8 @@ Please write a detailed, professional clinical narrative summary (500-800 words)
 Write in a professional medical tone suitable for clinical documentation. Use proper medical terminology and maintain HIPAA-compliant language.
 `;
 
-  // Call Gemini API
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${appConfig.GEMINI_API_KEY}`;
-
-  const payload = {
-    contents: [
-      {
-        parts: [
-          {
-            text: prompt,
-          },
-        ],
-      },
-    ],
-    generationConfig: {
-      temperature: 0.7,
-      topP: 0.95,
-      topK: 40,
-      maxOutputTokens: 2048,
-    },
-  };
-
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(30000),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Gemini API error: ${response.status} - ${error}`);
-    }
-
-    const data: any = await response.json();
-
-    if (!data.candidates || !data.candidates[0]) {
-      throw new Error("Invalid response from Gemini API");
-    }
-
-    const narrativeText = data.candidates[0].content.parts[0].text;
-
+    const narrativeText = await callGroq(prompt, 2048);
     return narrativeText;
   } catch (error) {
     if (error instanceof Error) {
@@ -2171,20 +1945,8 @@ Write in simple language that any patient in Bangladesh can understand. Be hones
 
 Disclaimer: This analysis is for informational purposes only and is not a substitute for professional medical advice.`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${appConfig.GEMINI_API_KEY}`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
-    }),
-    signal: AbortSignal.timeout(30000),
-  });
-
-  const data: any = await response.json();
-  return data.candidates[0].content.parts[0].text;
+const result = await callGroq(prompt, 2048);
+return result;
 };
 
 export const getHealthTimelineService = async (userId: string): Promise<string> => {
@@ -2222,20 +1984,8 @@ Generate a chronological health timeline that:
 
 Write in simple language. Be empathetic and supportive in tone.`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${appConfig.GEMINI_API_KEY}`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
-    }),
-    signal: AbortSignal.timeout(30000),
-  });
-
-  const data: any = await response.json();
-  return data.candidates[0].content.parts[0].text;
+  const result = await callGroq(prompt, 2048);
+  return result;
 };
 
 export const getCaseDocumentationService = async (userId: string): Promise<string> => {
@@ -2288,19 +2038,7 @@ End with this disclaimer: "This document is AI-generated for informational purpo
 
 Write professionally but in language patients can understand.`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${appConfig.GEMINI_API_KEY}`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 3000 },
-    }),
-    signal: AbortSignal.timeout(45000),
-  });
-
-  const data: any = await response.json();
-  return data.candidates[0].content.parts[0].text;
+  const result = await callGroq(prompt, 3000);
+  return result;
 };
 
