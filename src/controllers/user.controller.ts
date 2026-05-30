@@ -2,6 +2,23 @@ import { Request, Response } from "express";
 import { User } from "../models/user.model";
 import multer from "multer";
 import path from "path";
+import { ReminderModel } from "../models/reminder.model";
+import { PrescriptionModel } from "../models/prescription.model";
+
+export const deleteAccountController = async (req: Request, res: Response) => {
+  try {
+    if (!req.userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+    // Delete all user data
+    await PrescriptionModel.deleteMany({ userId: req.userId });
+    await ReminderModel.deleteMany({ userId: req.userId });
+    await User.findByIdAndDelete(req.userId);
+
+    res.json({ success: true, message: "Account deleted successfully" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+};
 
 export const getProfileController = async (req: Request, res: Response) => {
   try {

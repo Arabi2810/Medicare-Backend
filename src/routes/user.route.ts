@@ -5,6 +5,7 @@ import fs from "fs";
 import {
   getProfileController,
   updateProfileController,
+  deleteAccountController,
 } from "../controllers/user.controller";
 import { authenticate } from "../middleware/authenticate.middleware";
 
@@ -36,5 +37,5 @@ const uploadProfile = multer({
 
 router.get("/profile", authenticate, getProfileController);
 router.put("/profile", authenticate, uploadProfile.single("profilePhoto"), updateProfileController);
-
+router.delete("/account", authenticate, deleteAccountController);
 export default router;

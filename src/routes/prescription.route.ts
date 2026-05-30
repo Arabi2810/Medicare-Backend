@@ -24,6 +24,7 @@ import {
   getTestStatsController,
   completePrescriptionController,
   getPrescriptionFeedbackController,
+  updateReminderController,
 
   downloadClinicalSummaryPDFController,
   getClinicalSummaryController,
@@ -31,6 +32,7 @@ import {
   getHealthTimelineController,
   getCaseDocumentationController,
 } from "../controllers/prescription.controller";
+
 
 const router = express.Router();
 
@@ -51,6 +53,7 @@ const upload = multer({
 
 // Apply authentication to all routes
 router.use(authenticate);
+router.patch("/reminders/:reminderId", updateReminderController);
 
 // ============================================
 // PRESCRIPTION UPLOAD & PARSING

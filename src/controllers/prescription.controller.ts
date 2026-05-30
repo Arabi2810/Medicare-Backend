@@ -34,6 +34,7 @@ import {
   getHealthTimelineService,
   getCaseDocumentationService,
 } from "../services/prescription.service";
+import { ReminderModel } from "../models/reminder.model";
 
 // Step 1: Upload and parse (returns data for user to review/edit)
 export const prescriptionUploadController = async (
@@ -95,7 +96,7 @@ export const prescriptionSaveController = async (
   }
 
   const prescriptionData = req.body;
-
+  console.log("Tests received for save:", JSON.stringify(prescriptionData.tests, null, 2));
   // Validate required fields
   if (!prescriptionData.patient || !prescriptionData.medicines) {
     throw createServiceError("Missing required prescription data", 400);
@@ -649,6 +650,25 @@ export const completePrescriptionController = async (
         "Prescription completed, reminders paused, and feedback submitted successfully"
       )
     );
+};
+
+export const updateReminderController = async (req: Request, res: Response) => {
+  try {
+    if (!req.userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+    const { reminderId } = req.params;
+    const { timings, schedules, dosage } = req.body;
+
+    const reminder = await ReminderModel.findOneAndUpdate(
+      { _id: reminderId, userId: req.userId },
+      { $set: { timings, schedules, dosage } },
+      { new: true }
+    );
+
+    if (!reminder) { res.status(404).json({ error: "Reminder not found" }); return; }
+    res.json({ success: true, data: reminder });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
 // Get feedback for a specific prescription
