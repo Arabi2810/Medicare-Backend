@@ -1,6 +1,34 @@
 import { Request, Response } from "express";
 import { sendMedicationReminder, MedicationNotification } from "../services/notification.service";
 import { getUserFCMTokens } from "../services/fcm.service";
+import { runRemindersForTimeSlot } from "../jobs/reminderScheduler";
+
+export const triggerMorningReminders = async (req: Request, res: Response) => {
+  try {
+    const count = await runRemindersForTimeSlot('morning');
+    res.json({ success: true, sent: count });
+  } catch (err) {
+    res.status(500).json({ error: err });
+  }
+};
+
+export const triggerNoonReminders = async (req: Request, res: Response) => {
+  try {
+    const count = await runRemindersForTimeSlot('noon');
+    res.json({ success: true, sent: count });
+  } catch (err) {
+    res.status(500).json({ error: err });
+  }
+};
+
+export const triggerNightReminders = async (req: Request, res: Response) => {
+  try {
+    const count = await runRemindersForTimeSlot('night');
+    res.json({ success: true, sent: count });
+  } catch (err) {
+    res.status(500).json({ error: err });
+  }
+};
 
 export const testSendReminder = async (req: Request, res: Response) => {
   try {

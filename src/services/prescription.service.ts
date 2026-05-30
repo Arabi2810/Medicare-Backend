@@ -15,6 +15,87 @@ import { PrescriptionFeedbackModel } from "../models/PrescriptionFeedback.model"
 import PDFDocument from 'pdfkit';
 import { callGroq } from "../lib/groqClient";
 
+export const createRemindersForPrescription = async (
+  prescription: any,
+  userId: string
+) => {
+  try {
+    // Delete existing reminders for this prescription
+    await ReminderModel.deleteMany({ prescriptionId: prescription._id });
+
+    const reminders = [];
+
+    for (const medicine of prescription.medicines || []) {
+      if (!medicine.name) continue;
+
+      // Calculate endDate from duration
+      let endDate: Date | null = null;
+      if (medicine.duration) {
+        const days = parseDurationToDays(medicine.duration);
+        if (days > 0) {
+          endDate = new Date();
+          endDate.setDate(endDate.getDate() + days);
+        }
+      }
+
+      // Default schedule: morning only if no frequency info
+      const schedules = {
+        morning: true,
+        noon: false,
+        night: false,
+      };
+
+      // Parse frequency
+      if (medicine.frequency) {
+        const freq = medicine.frequency.toLowerCase();
+        if (freq.includes('2') || freq.includes('twice') || freq.includes('দুই') || freq.includes('২')) {
+          schedules.morning = true;
+          schedules.night = true;
+        }
+        if (freq.includes('3') || freq.includes('three') || freq.includes('তিন') || freq.includes('৩')) {
+          schedules.morning = true;
+          schedules.noon = true;
+          schedules.night = true;
+        }
+      }
+
+      reminders.push({
+        userId,
+        prescriptionId: prescription._id,
+        medicineName: medicine.name,
+        dosage: medicine.dosage || '1 tablet',
+        schedules,
+        timings: {
+          morning: '08:00',
+          noon: '13:00',
+          night: '20:00',
+        },
+        isActive: true,
+        startDate: new Date(),
+        endDate,
+      });
+    }
+
+    if (reminders.length > 0) {
+      await ReminderModel.insertMany(reminders);
+      console.log(`✅ Created ${reminders.length} reminders for prescription ${prescription._id}`);
+    }
+  } catch (error) {
+    console.error('❌ Error creating reminders:', error);
+  }
+};
+
+// Helper to convert duration string to days
+const parseDurationToDays = (duration: string): number => {
+  if (!duration) return 0;
+  const d = duration.toLowerCase();
+  const num = parseInt(d.replace(/[^0-9]/g, '')) || 0;
+  if (d.includes('week') || d.includes('সপ্তাহ')) return num * 7;
+  if (d.includes('month') || d.includes('মাস')) return num * 30;
+  if (d.includes('day') || d.includes('দিন')) return num;
+  return num; // default assume days
+};
+
 
 
 const normalizeBanglaDosage = (dosage: string): string => {
@@ -186,6 +267,7 @@ export const prescriptionSaveService = async (
   });
 
   const savedPrescription = await prescription.save();
+  await createRemindersForPrescription(savedPrescription, userId);
 
   // Auto-create reminders if prescription is current
   if (savedPrescription.isCurrent && savedPrescription.medicines.length > 0) {
