@@ -160,15 +160,18 @@ export const prescriptionSaveService = async (
 ) => {
 
   if (prescriptionData.tests && Array.isArray(prescriptionData.tests)) {
-    prescriptionData.tests = prescriptionData.tests.map((test: any) => ({
-      name: test.name,
-      type: test.type || null,
-      status: "pending",           // ⭐ HERE - Always set to pending for new tests
-      completedDate: null,
-      reportUrl: null,
-      resultSummary: null,
-      notes: null,
-    }));
+  prescriptionData.tests = prescriptionData.tests.map((test: any) => ({
+    name: test.name,
+    type: test.type || null,
+    status: "pending",
+    completedDate: null,
+    reportUrl: null,
+    resultSummary: null,
+    notes: null,
+    testDefinition: test.testDefinition || null,
+    patientRelevance: test.patientRelevance || null,
+    validityLevel: test.validityLevel || null,
+  }));
   }
   // Create new prescription with user-edited data
   const prescription = new PrescriptionModel({
