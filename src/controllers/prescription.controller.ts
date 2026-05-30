@@ -65,6 +65,7 @@ export const prescriptionUploadController = async (
     }
 
     const parsedData = await prescriptionParseService(extractedText);
+    console.log("Parsed tests:", JSON.stringify(parsedData.tests, null, 2));
 
     res.status(200).json(
       createSuccessResponse(
