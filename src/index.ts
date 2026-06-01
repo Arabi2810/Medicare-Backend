@@ -19,7 +19,7 @@ const startServer = async () => {
 
   // Cron scheduler - Asia/Dhaka timezone
   cron.schedule('0 8 * * *', () => runRemindersForTimeSlot('morning'), { timezone: 'Asia/Dhaka' });
-  cron.schedule('0 13 * * *', () => runRemindersForTimeSlot('noon'), { timezone: 'Asia/Dhaka' });
+  cron.schedule('0 14 * * *', () => runRemindersForTimeSlot('noon'), { timezone: 'Asia/Dhaka' });
   cron.schedule('0 20 * * *', () => runRemindersForTimeSlot('night'), { timezone: 'Asia/Dhaka' });
   cron.schedule('0 0 * * *', () => runCleanupJobs(), { timezone: 'Asia/Dhaka' });
   console.log("⏰ Reminder scheduler started");
