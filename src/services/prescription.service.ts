@@ -127,7 +127,7 @@ export const prescriptionParseService = async (
   const prompt = getPrompt(text);
 
   try {
-    const responseText = await callGroq(prompt, 2048);
+    const responseText = await callGroq(prompt, 8000);
 
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {

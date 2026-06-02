@@ -1,0 +1,27 @@
+name: Medication Reminders
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # Morning 8:00 AM BD (2:00 UTC)
+    - cron: '0 7 * * *'   # Noon 1:00 PM BD (7:00 UTC)
+    - cron: '0 14 * * *'  # Night 8:00 PM BD (14:00 UTC)
+  workflow_dispatch:      # Allows manual trigger
+
+jobs:
+  trigger-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Morning Reminders
+        if: contains(github.event.schedule, '0 2 * * *') || github.event_name == 'workflow_dispatch'
+        run: curl -X POST https://medicare-backend-aop7.onrender.com/test/reminders/morning
+
+      - name: Trigger Noon Reminders
+        if: contains(github.event.schedule, '0 7 * * *')
+        run: curl -X POST https://medicare-backend-aop7.onrender.com/test/reminders/noon
+
+      - name: Trigger Night Reminders
+        if: contains(github.event.schedule, '0 14 * * *')
+        run: curl -X POST https://medicare-backend-aop7.onrender.com/test/reminders/night
+
+      - name: Keep Render Awake
+        run: curl -X GET https://medicare-backend-aop7.onrender.com/api/health
