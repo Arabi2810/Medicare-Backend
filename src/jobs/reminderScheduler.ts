@@ -3,7 +3,7 @@ import { getDueRemindersService } from "../services/prescription.service";
 import { ReminderModel } from "../models/reminder.model";
 import { sendMedicationReminder, MedicationNotification } from "../services/notification.service";
 import { getUserFCMTokens, deactivateFCMToken, cleanupInactiveTokens } from "../services/fcm.service";
-
+import { autoMarkMissedService } from "../services/dailyLog.service";
 /**
  * Send notification to user for medication reminder
  */
@@ -12,7 +12,8 @@ const sendNotification = async (
   medicineName: string,
   dosage: string,
   timeSlot: "morning" | "noon" | "night",
-  prescriptionId?: string
+  prescriptionId?: string,
+  reminderId?: string           
 ) => {
   try {
     console.log(`📲 Sending notification to user ${userId} for ${medicineName} (${dosage}) at ${timeSlot}`);
@@ -30,6 +31,7 @@ const sendNotification = async (
       dosage,
       timeSlot,
       prescriptionId,
+      reminderId,
     };
 
     let sentCount = 0;
@@ -84,7 +86,8 @@ export const runRemindersForTimeSlot = async (timeSlot: "morning" | "noon" | "ni
       reminder.medicineName,
       reminder.dosage,
       timeSlot,
-      reminder.prescriptionId?.toString()
+      reminder.prescriptionId?.toString(),
+      reminder._id.toString()             // ← pass reminderId
     );
   
     // Update last notified timestamp
@@ -129,4 +132,14 @@ export const runCleanupJobs = async () => {
   console.log("🧹 FCM token cleanup done");
   
   return { expiredReminders: expired.modifiedCount };
+};
+/**
+ * Auto mark missed medicines
+ * Call this from the hourly cron endpoint
+ */
+export const runAutoMarkMissed = async () => {
+  console.log(`🔴 Running auto-mark missed at ${new Date().toISOString()}`);
+  const count = await autoMarkMissedService();
+  console.log(`🔴 Marked ${count} medicines as missed`);
+  return count;
 };

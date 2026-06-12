@@ -37,6 +37,7 @@ export interface MedicationNotification {
   dosage: string;
   timeSlot: "morning" | "noon" | "night";
   prescriptionId?: string | Types.ObjectId;
+  reminderId?: string;
 }
 
 export const sendMedicationReminder = async (
@@ -60,8 +61,10 @@ export const sendMedicationReminder = async (
       medicineName: notification.medicineName,
       dosage: notification.dosage,
       timeSlot: notification.timeSlot,
+      slot: notification.timeSlot,        // ← needed for action buttons
       userId: notification.userId.toString(),
       prescriptionId: notification.prescriptionId?.toString() || "",
+      reminderId: notification.reminderId?.toString() || "",  // ← needed for mark taken
       timestamp: new Date().toISOString(),
     },
     android: {

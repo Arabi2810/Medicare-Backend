@@ -20,7 +20,6 @@ export const createRemindersForPrescription = async (
   userId: string
 ) => {
   try {
-    // Delete existing reminders for this prescription
     await ReminderModel.deleteMany({ prescriptionId: prescription._id });
 
     const reminders = [];
@@ -28,7 +27,6 @@ export const createRemindersForPrescription = async (
     for (const medicine of prescription.medicines || []) {
       if (!medicine.name) continue;
 
-      // Calculate endDate from duration
       let endDate: Date | null = null;
       if (medicine.duration) {
         const days = parseDurationToDays(medicine.duration);
@@ -38,14 +36,12 @@ export const createRemindersForPrescription = async (
         }
       }
 
-      // Default schedule: morning only if no frequency info
       const schedules = {
         morning: true,
         noon: false,
         night: false,
       };
 
-      // Parse frequency
       if (medicine.frequency) {
         const freq = medicine.frequency.toLowerCase();
         if (freq.includes('2') || freq.includes('twice') || freq.includes('দুই') || freq.includes('২')) {
@@ -85,7 +81,6 @@ export const createRemindersForPrescription = async (
   }
 };
 
-// Helper to convert duration string to days
 const parseDurationToDays = (duration: string): number => {
   if (!duration) return 0;
   const d = duration.toLowerCase();
@@ -93,10 +88,8 @@ const parseDurationToDays = (duration: string): number => {
   if (d.includes('week') || d.includes('সপ্তাহ')) return num * 7;
   if (d.includes('month') || d.includes('মাস')) return num * 30;
   if (d.includes('day') || d.includes('দিন')) return num;
-  return num; // default assume days
+  return num;
 };
-
-
 
 const normalizeBanglaDosage = (dosage: string): string => {
   if (!dosage || typeof dosage !== "string") {
@@ -116,7 +109,6 @@ const normalizeBanglaDosage = (dosage: string): string => {
   return result;
 };
 
-
 export const prescriptionParseService = async (
   text: string
 ): Promise<ParsedPrescription> => {
@@ -126,50 +118,67 @@ export const prescriptionParseService = async (
 
   const prompt = getPrompt(text);
 
-  try {
-    const responseText = await callGroq(prompt, 8000);
+  const extractAndParseJson = (raw: string): any => {
+    let cleaned = raw.trim();
+    cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace === -1 || lastBrace === -1) {
+      throw new Error('No JSON object found in response');
+    }
+    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+    cleaned = cleaned.replace(/,\s*([\]}])/g, '$1');
+    return JSON.parse(cleaned);
+  };
 
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("Could not parse JSON from prescription text. Response: " + responseText.substring(0, 200));
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= 3; attempt++) {
+    if (attempt > 0) {
+      await new Promise(r => setTimeout(r, 1000 * attempt));
     }
 
-    let parsedData: any;
     try {
-      parsedData = JSON.parse(jsonMatch[0]);
-    } catch (parseError) {
-      throw new Error(`Failed to parse JSON: ${parseError instanceof Error ? parseError.message : "Unknown error"}`);
-    }
+      const responseText = await callGroq(prompt, "8000");
 
-    if (!validatePrescriptionParsedData(parsedData)) {
-      throw new Error("Parsed data does not match required schema");
-    }
+      let parsedData: any;
+      try {
+        parsedData = extractAndParseJson(responseText);
+      } catch (parseError) {
+        lastError = new Error(
+          `JSON parse failed (attempt ${attempt + 1}): ${parseError instanceof Error ? parseError.message : 'Unknown'}`
+        );
+        continue;
+      }
 
-    if (parsedData.medicines.length > 0) {
-      parsedData.medicines = parsedData.medicines
-        .filter((med: any) => med.name && med.name.trim().length > 0)
-        .map((med: any) => ({
-          ...med,
-          dosage: med.dosage ? normalizeBanglaDosage(med.dosage) : med.dosage,
-        }));
-    }
+      if (!validatePrescriptionParsedData(parsedData)) {
+        throw new Error("Parsed data does not match required schema");
+      }
 
-    parsedData.symptoms = [...new Set(parsedData.symptoms.filter(Boolean))];
-    parsedData.diagnosis = [...new Set(parsedData.diagnosis.filter(Boolean))];
+      if (parsedData.medicines.length > 0) {
+        parsedData.medicines = parsedData.medicines
+          .filter((med: any) => med.name && med.name.trim().length > 0)
+          .map((med: any) => ({
+            ...med,
+            dosage: med.dosage ? normalizeBanglaDosage(med.dosage) : med.dosage,
+          }));
+      }
 
-    return parsedData as ParsedPrescription;
-  } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Prescription parsing failed: ${error.message}`);
+      parsedData.symptoms = [...new Set(parsedData.symptoms.filter(Boolean))];
+      parsedData.diagnosis = [...new Set(parsedData.diagnosis.filter(Boolean))];
+
+      return parsedData as ParsedPrescription;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('schema')) {
+        throw error;
+      }
+      lastError = error instanceof Error ? error : new Error('Unknown error');
     }
-    throw new Error("Prescription parsing failed: Unknown error");
   }
+
+  throw new Error(`Prescription parsing failed after retries: ${lastError?.message}`);
 };
 
-
-
-
-// Helper: Calculate end date from duration string
 const calculateEndDate = (duration: string): Date | null => {
   const daysMatch = duration.match(/(\d+)\s*days?/i);
   if (daysMatch) {
@@ -198,7 +207,6 @@ const calculateEndDate = (duration: string): Date | null => {
   return null;
 };
 
-// Helper: Create reminders for medicines
 const createRemindersForMedicines = async (
   prescriptionId: string,
   userId: string,
@@ -234,27 +242,25 @@ const createRemindersForMedicines = async (
   return reminders;
 };
 
-// Save prescription with user-edited data and auto-create reminders
 export const prescriptionSaveService = async (
   prescriptionData: any,
   userId: string
 ) => {
-
   if (prescriptionData.tests && Array.isArray(prescriptionData.tests)) {
-  prescriptionData.tests = prescriptionData.tests.map((test: any) => ({
-    name: test.name,
-    type: test.type || null,
-    status: "pending",
-    completedDate: null,
-    reportUrl: null,
-    resultSummary: null,
-    notes: null,
-    testDefinition: test.testDefinition || null,
-    patientRelevance: test.patientRelevance || null,
-    validityLevel: test.validityLevel || null,
-  }));
+    prescriptionData.tests = prescriptionData.tests.map((test: any) => ({
+      name: test.name,
+      type: test.type || null,
+      status: "pending",
+      completedDate: null,
+      reportUrl: null,
+      resultSummary: null,
+      notes: null,
+      testDefinition: test.testDefinition || null,
+      patientRelevance: test.patientRelevance || null,
+      validityLevel: test.validityLevel || null,
+    }));
   }
-  // Create new prescription with user-edited data
+
   const prescription = new PrescriptionModel({
     ...prescriptionData,
     userId: new Types.ObjectId(userId),
@@ -267,26 +273,13 @@ export const prescriptionSaveService = async (
   });
 
   const savedPrescription = await prescription.save();
-  await createRemindersForPrescription(savedPrescription, userId);
 
-  // Auto-create reminders if prescription is current
-  if (savedPrescription.isCurrent && savedPrescription.medicines.length > 0) {
-    try {
-      await createRemindersForMedicines(
-        savedPrescription._id.toString(),
-        userId,
-        savedPrescription.medicines
-      );
-    } catch (error) {
-      console.error("Failed to create reminders:", error);
-      // Don't fail the save if reminder creation fails
-    }
-  }
+  // Create reminders ONCE only
+  await createRemindersForPrescription(savedPrescription, userId);
 
   return savedPrescription;
 };
 
-// Update existing prescription
 export const prescriptionUpdateService = async (
   prescriptionId: string,
   userId: string,
@@ -301,21 +294,17 @@ export const prescriptionUpdateService = async (
     throw new Error("Prescription not found or access denied");
   }
 
-  // Update fields
   Object.assign(prescription, updateData);
   prescription.parsedAt = new Date();
 
   const updatedPrescription = await prescription.save();
 
-  // If prescription is current, recreate reminders with updated data
   if (updatedPrescription.isCurrent && updatedPrescription.medicines.length > 0) {
     try {
-      // Delete old reminders
       await ReminderModel.deleteMany({
         prescriptionId: new Types.ObjectId(prescriptionId),
       });
 
-      // Create new reminders with updated medicine data
       await createRemindersForMedicines(
         prescriptionId,
         userId,
@@ -329,7 +318,6 @@ export const prescriptionUpdateService = async (
   return updatedPrescription;
 };
 
-// Get all prescriptions for a user
 export const prescriptionGetAllService = async (userId: string) => {
   const prescriptions = await PrescriptionModel.find({
     userId: new Types.ObjectId(userId),
@@ -340,7 +328,6 @@ export const prescriptionGetAllService = async (userId: string) => {
   return prescriptions;
 };
 
-// Get only current prescriptions
 export const prescriptionGetCurrentService = async (userId: string) => {
   const prescriptions = await PrescriptionModel.find({
     userId: new Types.ObjectId(userId),
@@ -352,12 +339,11 @@ export const prescriptionGetCurrentService = async (userId: string) => {
   return prescriptions;
 };
 
-// Get active medications from current prescriptions
 export const getActiveMedicationsService = async (userId: string) => {
   const currentPrescriptions = await PrescriptionModel.find({
     userId: new Types.ObjectId(userId),
     isCurrent: true,
-    isComplete: false, 
+    isComplete: false,
   })
     .select("medicines doctor uploadedAt patient _id")
     .sort({ uploadedAt: -1 })
@@ -380,7 +366,6 @@ export const getActiveMedicationsService = async (userId: string) => {
   };
 };
 
-// Get single prescription by ID
 export const prescriptionGetByIdService = async (
   prescriptionId: string,
   userId: string
@@ -393,12 +378,10 @@ export const prescriptionGetByIdService = async (
   return prescription;
 };
 
-// Delete prescription by ID
 export const prescriptionDeleteByIdService = async (
   prescriptionId: string,
   userId: string
 ) => {
-  // Delete associated reminders first
   await ReminderModel.deleteMany({
     prescriptionId: new Types.ObjectId(prescriptionId),
   });
@@ -415,7 +398,6 @@ export const prescriptionDeleteByIdService = async (
   return deletedPrescription;
 };
 
-// Toggle prescription current/archived status
 export const togglePrescriptionCurrentStatus = async (
   prescriptionId: string,
   userId: string,
@@ -434,20 +416,14 @@ export const togglePrescriptionCurrentStatus = async (
     throw new Error("Prescription not found or access denied");
   }
 
-  // If archiving, deactivate reminders
   if (!isCurrent) {
     await ReminderModel.updateMany(
-      {
-        prescriptionId: new Types.ObjectId(prescriptionId),
-      },
+      { prescriptionId: new Types.ObjectId(prescriptionId) },
       { isActive: false }
     );
   } else {
-    // If marking as current, reactivate reminders
     await ReminderModel.updateMany(
-      {
-        prescriptionId: new Types.ObjectId(prescriptionId),
-      },
+      { prescriptionId: new Types.ObjectId(prescriptionId) },
       { isActive: true }
     );
   }
@@ -455,7 +431,6 @@ export const togglePrescriptionCurrentStatus = async (
   return prescription;
 };
 
-// Get user reminders
 export const getUserRemindersService = async (userId: string) => {
   return await ReminderModel.find({
     userId: new Types.ObjectId(userId),
@@ -466,7 +441,6 @@ export const getUserRemindersService = async (userId: string) => {
     .lean();
 };
 
-// Get due reminders for notification scheduler
 export const getDueRemindersService = async (
   timeSlot: "morning" | "noon" | "night"
 ) => {
@@ -482,7 +456,6 @@ export const getDueRemindersService = async (
     .lean();
 };
 
-// Get prescription statistics
 export const getPrescriptionStatsService = async (userId: string) => {
   const stats = await PrescriptionModel.aggregate([
     {
@@ -512,6 +485,7 @@ export const getPrescriptionStatsService = async (userId: string) => {
     byStatus: stats[0]?.byStatus || [],
   };
 };
+
 export interface IHealthInsights {
   mostUsedMedicines: Array<{
     name: string;
@@ -543,7 +517,6 @@ export interface IHealthInsights {
   recentDiagnoses: string[];
 }
 
-// Helper functions
 const extractGenericName = (medicineName: string): string | undefined => {
   const match = medicineName.match(/\(([^)]+)\)/);
   return match ? match[1].trim() : undefined;
@@ -553,7 +526,6 @@ const capitalizeFirst = (str: string): string => {
   return str.charAt(0).toUpperCase() + str.slice(1);
 };
 
-// Main service function
 export const getHealthInsightsService = async (
   userId: string
 ): Promise<IHealthInsights> => {
@@ -569,7 +541,6 @@ export const getHealthInsightsService = async (
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
 
-  // Most used medicines
   const medicineCount = new Map<string, number>();
   prescriptions.forEach((prescription) => {
     prescription.medicines.forEach((medicine) => {
@@ -593,7 +564,6 @@ export const getHealthInsightsService = async (
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
 
-  // Common symptoms
   const symptomCount = new Map<string, number>();
   prescriptions.forEach((prescription) => {
     prescription.symptoms.forEach((symptom) => {
@@ -618,7 +588,6 @@ export const getHealthInsightsService = async (
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
 
-  // Treatment stats
   const activeMedicationsSet = new Set<string>();
   const doctorNamesSet = new Set<string>();
 
@@ -640,7 +609,6 @@ export const getHealthInsightsService = async (
     archivedPrescriptions: prescriptions.filter((p) => !p.isCurrent).length,
   };
 
-  // Medication trends
   const currentMonthPrescriptions = prescriptions.filter(
     (p) => new Date(p.uploadedAt) >= currentMonthStart
   ).length;
@@ -664,7 +632,6 @@ export const getHealthInsightsService = async (
     changePercentage,
   };
 
-  // Top doctors
   const doctorConsultations = new Map<
     string,
     { name: string; specialization: string | null; count: number }
@@ -695,7 +662,6 @@ export const getHealthInsightsService = async (
     .sort((a, b) => b.consultationCount - a.consultationCount)
     .slice(0, 5);
 
-  // Recent diagnoses
   const recentDiagnosesSet = new Set<string>();
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
@@ -720,13 +686,12 @@ export const getHealthInsightsService = async (
     topDoctors,
     recentDiagnoses,
   };
-}
+};
 
 export const getPrescriptionDetailsService = async (
   prescriptionId: string,
   userId: string
 ) => {
-  // Get prescription
   const prescription = await PrescriptionModel.findOne({
     _id: new Types.ObjectId(prescriptionId),
     userId: new Types.ObjectId(userId),
@@ -736,17 +701,14 @@ export const getPrescriptionDetailsService = async (
     return null;
   }
 
-  // Get reminders for this prescription
   const reminders = await ReminderModel.find({
     prescriptionId: new Types.ObjectId(prescriptionId),
   }).lean();
 
-  // Get feedback (if completed)
   const feedback = await PrescriptionFeedbackModel.findOne({
     prescriptionId: new Types.ObjectId(prescriptionId),
   }).lean();
 
-  // Calculate test statistics
   const testStats = {
     total: prescription.tests.length,
     pending: prescription.tests.filter((t: any) => t.status === "pending").length,
@@ -754,7 +716,6 @@ export const getPrescriptionDetailsService = async (
     cancelled: prescription.tests.filter((t: any) => t.status === "cancelled").length,
   };
 
-  // Check if all tests are completed
   const allTestsCompleted =
     prescription.tests.length === 0 ||
     prescription.tests.every(
@@ -810,6 +771,7 @@ export const getPendingTestsService = async (userId: string) => {
 
   return pendingTests;
 };
+
 export const completeTestService = async (
   prescriptionId: string,
   testId: string,
@@ -829,7 +791,6 @@ export const completeTestService = async (
     throw new Error("Prescription not found or access denied");
   }
 
-  // Find test by _id in the array
   const testIndex = prescription.tests.findIndex(
     (t) => t._id?.toString() === testId
   );
@@ -838,7 +799,6 @@ export const completeTestService = async (
     throw new Error("Test not found in this prescription");
   }
 
-  // Update test properties
   prescription.tests[testIndex].status = "completed";
   prescription.tests[testIndex].completedDate = new Date();
   prescription.tests[testIndex].reportUrl = data.reportUrl || null;
@@ -915,26 +875,6 @@ export const cancelTestService = async (
     _id: new Types.ObjectId(prescriptionId),
     userId: new Types.ObjectId(userId),
   });
-
-  // if (!prescription) {
-  //   throw new Error("Prescription not found or access denied");
-  // }
-
-  // const test = prescription.tests.id(testId);
-
-  // if (!test) {
-  //   throw new Error("Test not found in this prescription");
-  // }
-
-  // test.status = "cancelled";
-  // test.notes = reason || "Cancelled by user";
-
-  // await prescription.save();
-
-  // return {
-  //   prescriptionId: prescription._id,
-  //   test: test.toObject(),
-  // };
 };
 
 export const areAllTestsCompletedService = async (
@@ -1251,13 +1191,12 @@ export const getClinicalSummaryService = async (userId: string) => {
     feedbackSummary,
   };
 };
+
 export interface ClinicalTimelinePeriod {
-  periodLabel: string; // "Month 1", "Months 2-3", "Months 4-6", "Current"
+  periodLabel: string;
   startDate: Date;
   endDate: Date;
   monthsFromStart: number;
-  
-  // What happened during this period
   prescriptions: Array<{
     id: string;
     date: Date;
@@ -1266,18 +1205,13 @@ export interface ClinicalTimelinePeriod {
       specialization?: string;
     };
   }>;
-  
-  // Patient's condition
   symptoms: {
-    reported: string[]; // All symptoms in this period
-    new: string[]; // New symptoms not seen before
-    continuing: string[]; // Symptoms from previous periods
-    resolved: string[]; // Symptoms that were present before but not now
+    reported: string[];
+    new: string[];
+    continuing: string[];
+    resolved: string[];
   };
-  
   diagnosis: string[];
-  
-  // Medications prescribed
   medications: Array<{
     name: string;
     dosage: string;
@@ -1285,8 +1219,6 @@ export interface ClinicalTimelinePeriod {
     duration: string;
     instructions?: string;
   }>;
-  
-  // Tests during this period
   tests: {
     ordered: Array<{
       name: string;
@@ -1301,21 +1233,18 @@ export interface ClinicalTimelinePeriod {
       notes?: string;
     }>;
   };
-  
-  // Patient feedback (if prescription was completed)
   patientFeedback?: {
-    overallImprovement: number; // 1-5
-    symptomRelief: number; // 1-5
-    medicationEffectiveness: number; // 1-5
-    sideEffects: number; // 1-5 (1=severe, 5=none)
+    overallImprovement: number;
+    symptomRelief: number;
+    medicationEffectiveness: number;
+    sideEffects: number;
     sideEffectsDescription?: string;
     healthConditionNow: string;
     wasHelpful: boolean;
     wouldRecommend: boolean;
     additionalComments?: string;
   };
-  
-  clinicalNotes: string[]; // Auto-generated clinical observations
+  clinicalNotes: string[];
 }
 
 export interface TestResultsByType {
@@ -1332,16 +1261,12 @@ export interface TestResultsByType {
 
 export interface DetailedClinicalSummary {
   generatedAt: Date;
-  
-  // Patient demographics
   patientInfo: {
     name: string;
     age: string;
     gender: string;
     contact: string;
   };
-  
-  // Treatment overview
   treatmentPeriod: {
     firstVisit: Date;
     lastVisit: Date;
@@ -1351,25 +1276,17 @@ export interface DetailedClinicalSummary {
     activeTreatments: number;
     completedTreatments: number;
   };
-  
-  // Timeline of care (chronological)
   clinicalTimeline: ClinicalTimelinePeriod[];
-  
-  // Test results grouped by type
   testResultsSummary: TestResultsByType[];
-  
-  // Overall health progression
   healthProgressionSummary: {
     initialSymptoms: string[];
     currentSymptoms: string[];
     resolvedSymptoms: string[];
     persistentSymptoms: string[];
-    
-    baselineCondition: string; // First feedback description
-    currentCondition: string; // Latest feedback description
-    
+    baselineCondition: string;
+    currentCondition: string;
     improvementTrend: {
-      overallScore: number; // Average improvement rating
+      overallScore: number;
       trend: "improving" | "stable" | "declining" | "insufficient_data";
       progressionData: Array<{
         period: string;
@@ -1377,10 +1294,9 @@ export interface DetailedClinicalSummary {
         symptomRelief: number;
       }>;
     };
-    
     sideEffectsHistory: {
       totalReported: number;
-      averageSeverity: number; // 1-5
+      averageSeverity: number;
       descriptions: Array<{
         period: string;
         severity: number;
@@ -1388,36 +1304,30 @@ export interface DetailedClinicalSummary {
       }>;
     };
   };
-  
-  // Medication effectiveness
   medicationAnalysis: Array<{
     name: string;
     timesPrescribed: number;
     periods: string[];
     totalDuration: string;
-    effectiveness?: number; // Average from feedback
+    effectiveness?: number;
     associatedSymptoms: string[];
   }>;
-  
-  // Clinical recommendations (auto-generated)
   clinicalObservations: string[];
 }
 
-// Helper: Calculate months difference
 const getMonthsDifference = (start: Date, end: Date): number => {
-  const months = (end.getFullYear() - start.getFullYear()) * 12 + 
+  const months = (end.getFullYear() - start.getFullYear()) * 12 +
                  (end.getMonth() - start.getMonth());
   return months;
 };
 
-// Helper: Group prescriptions into time periods
 const groupPrescriptionsByPeriods = (prescriptions: any[], startDate: Date) => {
   const periods: Map<string, any[]> = new Map();
-  
+
   prescriptions.forEach(prescription => {
     const prescDate = new Date(prescription.uploadedAt);
     const monthsDiff = getMonthsDifference(startDate, prescDate);
-    
+
     let periodKey: string;
     if (monthsDiff === 0) periodKey = "Month 1";
     else if (monthsDiff === 1) periodKey = "Month 2";
@@ -1425,20 +1335,19 @@ const groupPrescriptionsByPeriods = (prescriptions: any[], startDate: Date) => {
     else if (monthsDiff >= 4 && monthsDiff <= 6) periodKey = "Months 4-6";
     else if (monthsDiff >= 7 && monthsDiff <= 12) periodKey = "Months 7-12";
     else periodKey = `Month ${monthsDiff + 1}`;
-    
+
     if (!periods.has(periodKey)) {
       periods.set(periodKey, []);
     }
     periods.get(periodKey)!.push(prescription);
   });
-  
+
   return periods;
 };
 
 export const getDetailedClinicalSummaryService = async (
   userId: string
 ): Promise<DetailedClinicalSummary> => {
-  // Fetch all prescriptions and feedbacks
   const prescriptions = await PrescriptionModel.find({
     userId: new Types.ObjectId(userId),
     status: "confirmed",
@@ -1454,12 +1363,10 @@ export const getDetailedClinicalSummaryService = async (
     userId: new Types.ObjectId(userId),
   }).lean();
 
-  // Create feedback map for quick lookup
   const feedbackMap = new Map(
     feedbacks.map(f => [f.prescriptionId.toString(), f])
   );
 
-  // === PATIENT INFO ===
   const latestPrescription = prescriptions[prescriptions.length - 1];
   const patientInfo = {
     name: latestPrescription.patient?.name || "N/A",
@@ -1468,11 +1375,10 @@ export const getDetailedClinicalSummaryService = async (
     contact: latestPrescription.patient?.contact || "N/A",
   };
 
-  // === TREATMENT PERIOD ===
   const firstVisit = new Date(prescriptions[0].uploadedAt);
   const lastVisit = new Date(prescriptions[prescriptions.length - 1].uploadedAt);
   const totalMonths = getMonthsDifference(firstVisit, lastVisit);
-  
+
   const uniqueDoctors = new Set(
     prescriptions.map(p => p.doctor?.name).filter(Boolean)
   );
@@ -1487,37 +1393,31 @@ export const getDetailedClinicalSummaryService = async (
     completedTreatments: prescriptions.filter(p => p.isComplete).length,
   };
 
-  // === BUILD CLINICAL TIMELINE ===
   const periodGroups = groupPrescriptionsByPeriods(prescriptions, firstVisit);
   const clinicalTimeline: ClinicalTimelinePeriod[] = [];
-  
+
   const allSymptomsSoFar = new Set<string>();
-  
+
   for (const [periodLabel, periodPrescriptions] of periodGroups) {
     const periodStart = new Date(periodPrescriptions[0].uploadedAt);
     const periodEnd = new Date(periodPrescriptions[periodPrescriptions.length - 1].uploadedAt);
     const monthsFromStart = getMonthsDifference(firstVisit, periodStart);
-    
-    // Collect all symptoms in this period
+
     const periodSymptoms = new Set<string>();
     periodPrescriptions.forEach(p => {
       p.symptoms.forEach((s: string) => periodSymptoms.add(s));
     });
-    
-    // Determine new vs continuing symptoms
+
     const newSymptoms = Array.from(periodSymptoms).filter(s => !allSymptomsSoFar.has(s));
     const continuingSymptoms = Array.from(periodSymptoms).filter(s => allSymptomsSoFar.has(s));
-    
-    // Add to all symptoms seen
+
     periodSymptoms.forEach(s => allSymptomsSoFar.add(s));
-    
-    // Collect diagnosis
+
     const diagnosisSet = new Set<string>();
     periodPrescriptions.forEach(p => {
       p.diagnosis.forEach((d: string) => diagnosisSet.add(d));
     });
-    
-    // Collect medications
+
     const medications: any[] = [];
     periodPrescriptions.forEach(p => {
       p.medicines.forEach((m: any) => {
@@ -1530,11 +1430,10 @@ export const getDetailedClinicalSummaryService = async (
         });
       });
     });
-    
-    // Collect tests
+
     const orderedTests: any[] = [];
     const completedTests: any[] = [];
-    
+
     periodPrescriptions.forEach(p => {
       p.tests.forEach((test: any) => {
         orderedTests.push({
@@ -1542,7 +1441,7 @@ export const getDetailedClinicalSummaryService = async (
           type: test.type,
           orderedDate: p.uploadedAt,
         });
-        
+
         if (test.status === "completed") {
           completedTests.push({
             name: test.name,
@@ -1554,8 +1453,7 @@ export const getDetailedClinicalSummaryService = async (
         }
       });
     });
-    
-    // Get feedback (use most recent completed prescription in period)
+
     let patientFeedback: any = undefined;
     for (const p of periodPrescriptions.reverse()) {
       const feedback = feedbackMap.get(p._id.toString());
@@ -1574,11 +1472,10 @@ export const getDetailedClinicalSummaryService = async (
         break;
       }
     }
-    periodPrescriptions.reverse(); // Restore order
-    
-    // Generate clinical notes
+    periodPrescriptions.reverse();
+
     const clinicalNotes: string[] = [];
-    
+
     if (newSymptoms.length > 0) {
       clinicalNotes.push(`New symptoms reported: ${newSymptoms.join(", ")}`);
     }
@@ -1597,7 +1494,7 @@ export const getDetailedClinicalSummaryService = async (
         clinicalNotes.push(`Side effects reported (severity: ${6 - patientFeedback.sideEffects}/5)`);
       }
     }
-    
+
     clinicalTimeline.push({
       periodLabel,
       startDate: periodStart,
@@ -1615,7 +1512,7 @@ export const getDetailedClinicalSummaryService = async (
         reported: Array.from(periodSymptoms),
         new: newSymptoms,
         continuing: continuingSymptoms,
-        resolved: [], // Will calculate in next iteration
+        resolved: [],
       },
       diagnosis: Array.from(diagnosisSet),
       medications,
@@ -1627,22 +1524,20 @@ export const getDetailedClinicalSummaryService = async (
       clinicalNotes,
     });
   }
-  
-  // Calculate resolved symptoms for each period
+
   for (let i = 0; i < clinicalTimeline.length - 1; i++) {
     const currentPeriod = clinicalTimeline[i];
     const nextPeriod = clinicalTimeline[i + 1];
-    
+
     const currentSymptoms = new Set(currentPeriod.symptoms.reported);
     const nextSymptoms = new Set(nextPeriod.symptoms.reported);
-    
+
     const resolved = Array.from(currentSymptoms).filter(s => !nextSymptoms.has(s));
     nextPeriod.symptoms.resolved = resolved;
   }
-  
-  // === TEST RESULTS GROUPED BY TYPE ===
+
   const testsByType = new Map<string, any[]>();
-  
+
   clinicalTimeline.forEach(period => {
     period.tests.completed.forEach(test => {
       const key = test.type || test.name;
@@ -1658,7 +1553,7 @@ export const getDetailedClinicalSummaryService = async (
       });
     });
   });
-  
+
   const testResultsSummary: TestResultsByType[] = Array.from(testsByType.entries()).map(
     ([testType, results]) => ({
       testType,
@@ -1666,21 +1561,19 @@ export const getDetailedClinicalSummaryService = async (
       results: results.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
     })
   );
-  
-  // === HEALTH PROGRESSION SUMMARY ===
+
   const initialSymptoms = clinicalTimeline[0]?.symptoms.reported || [];
   const currentSymptoms = clinicalTimeline[clinicalTimeline.length - 1]?.symptoms.reported || [];
-  
+
   const allSymptomsEver = new Set<string>();
   clinicalTimeline.forEach(p => p.symptoms.reported.forEach(s => allSymptomsEver.add(s)));
-  
+
   const resolvedSymptoms = Array.from(allSymptomsEver).filter(s => !currentSymptoms.includes(s));
   const persistentSymptoms = initialSymptoms.filter(s => currentSymptoms.includes(s));
-  
+
   const baselineCondition = feedbacks[0]?.healthConditionNow || "No baseline data";
   const currentCondition = feedbacks[feedbacks.length - 1]?.healthConditionNow || "No current data";
-  
-  // Calculate improvement trend
+
   const progressionData = clinicalTimeline
     .filter(p => p.patientFeedback)
     .map(p => ({
@@ -1688,11 +1581,11 @@ export const getDetailedClinicalSummaryService = async (
       improvement: p.patientFeedback!.overallImprovement,
       symptomRelief: p.patientFeedback!.symptomRelief,
     }));
-  
+
   const avgImprovement = progressionData.length > 0
     ? progressionData.reduce((sum, p) => sum + p.improvement, 0) / progressionData.length
     : 0;
-  
+
   let trend: "improving" | "stable" | "declining" | "insufficient_data" = "insufficient_data";
   if (progressionData.length >= 2) {
     const first = progressionData[0].improvement;
@@ -1701,20 +1594,19 @@ export const getDetailedClinicalSummaryService = async (
     else if (last < first - 0.5) trend = "declining";
     else trend = "stable";
   }
-  
-  // Side effects history
+
   const sideEffectsDescriptions = clinicalTimeline
     .filter(p => p.patientFeedback && p.patientFeedback.sideEffectsDescription)
     .map(p => ({
       period: p.periodLabel,
-      severity: 6 - p.patientFeedback!.sideEffects, // Invert scale (1=none, 5=severe)
+      severity: 6 - p.patientFeedback!.sideEffects,
       description: p.patientFeedback!.sideEffectsDescription || "",
     }));
-  
+
   const avgSeverity = sideEffectsDescriptions.length > 0
     ? sideEffectsDescriptions.reduce((sum, s) => sum + s.severity, 0) / sideEffectsDescriptions.length
     : 0;
-  
+
   const healthProgressionSummary = {
     initialSymptoms,
     currentSymptoms,
@@ -1733,10 +1625,9 @@ export const getDetailedClinicalSummaryService = async (
       descriptions: sideEffectsDescriptions,
     },
   };
-  
-  // === MEDICATION ANALYSIS ===
+
   const medicineUsage = new Map<string, any>();
-  
+
   clinicalTimeline.forEach(period => {
     period.medications.forEach(med => {
       if (!medicineUsage.has(med.name)) {
@@ -1749,7 +1640,7 @@ export const getDetailedClinicalSummaryService = async (
           associatedSymptoms: new Set<string>(),
         });
       }
-      
+
       const usage = medicineUsage.get(med.name);
       usage.timesPrescribed++;
       usage.periods.push(period.periodLabel);
@@ -1760,7 +1651,7 @@ export const getDetailedClinicalSummaryService = async (
       period.symptoms.reported.forEach(s => usage.associatedSymptoms.add(s));
     });
   });
-  
+
   const medicationAnalysis = Array.from(medicineUsage.values()).map(m => ({
     name: m.name,
     timesPrescribed: m.timesPrescribed,
@@ -1769,35 +1660,34 @@ export const getDetailedClinicalSummaryService = async (
     effectiveness: m.effectiveness.length > 0
       ? Math.round((m.effectiveness.reduce((a: number, b: number) => a + b, 0) / m.effectiveness.length) * 10) / 10
       : undefined,
-     associatedSymptoms: Array.from(m.associatedSymptoms) as string[],
+    associatedSymptoms: Array.from(m.associatedSymptoms) as string[],
   }));
-  
-  // === CLINICAL OBSERVATIONS ===
+
   const clinicalObservations: string[] = [];
-  
+
   if (trend === "improving") {
     clinicalObservations.push("Patient shows positive response to treatment with overall improvement in condition.");
   } else if (trend === "declining") {
     clinicalObservations.push("Patient condition shows declining trend. Consider treatment reassessment.");
   }
-  
+
   if (resolvedSymptoms.length > 0) {
     clinicalObservations.push(`${resolvedSymptoms.length} symptom(s) have resolved: ${resolvedSymptoms.slice(0, 3).join(", ")}`);
   }
-  
+
   if (persistentSymptoms.length > 0) {
     clinicalObservations.push(`${persistentSymptoms.length} persistent symptom(s) require continued monitoring: ${persistentSymptoms.slice(0, 3).join(", ")}`);
   }
-  
+
   if (avgSeverity > 2) {
     clinicalObservations.push(`Significant side effects reported. Average severity: ${avgSeverity}/5`);
   }
-  
+
   const highEffectiveness = medicationAnalysis.filter(m => m.effectiveness && m.effectiveness >= 4);
   if (highEffectiveness.length > 0) {
     clinicalObservations.push(`Highly effective medications: ${highEffectiveness.map(m => m.name).slice(0, 3).join(", ")}`);
   }
-  
+
   return {
     generatedAt: new Date(),
     patientInfo,
@@ -1809,13 +1699,11 @@ export const getDetailedClinicalSummaryService = async (
     clinicalObservations,
   };
 };
+
 export const generateClinicalSummaryPDFService = async (
   userId: string
 ): Promise<Buffer> => {
-  // Get the AI narrative
   const narrative = await generateAIClinicalNarrativeService(userId);
-  
-  // Get basic patient info
   const summary = await getDetailedClinicalSummaryService(userId);
 
   return new Promise((resolve, reject) => {
@@ -1833,7 +1721,6 @@ export const generateClinicalSummaryPDFService = async (
         resolve(pdfBuffer);
       });
 
-      // Header
       doc
         .fontSize(22)
         .font('Helvetica-Bold')
@@ -1846,14 +1733,12 @@ export const generateClinicalSummaryPDFService = async (
         .text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' })
         .moveDown(0.5);
 
-      // Horizontal line
       doc
         .moveTo(50, doc.y)
         .lineTo(545, doc.y)
         .stroke()
         .moveDown(1);
 
-      // Patient Info
       doc.fontSize(12).font('Helvetica-Bold').text('Patient Information').moveDown(0.3);
       doc.fontSize(10).font('Helvetica');
       doc.text(`Name: ${summary.patientInfo.name}`);
@@ -1862,14 +1747,12 @@ export const generateClinicalSummaryPDFService = async (
       doc.text(`Contact: ${summary.patientInfo.contact}`);
       doc.moveDown(1);
 
-      // Horizontal line
       doc
         .moveTo(50, doc.y)
         .lineTo(545, doc.y)
         .stroke()
         .moveDown(1);
 
-      // AI-Generated Clinical Narrative
       doc
         .fontSize(14)
         .font('Helvetica-Bold')
@@ -1886,16 +1769,13 @@ export const generateClinicalSummaryPDFService = async (
 
       doc.moveDown(2);
 
-      // Footer
       doc
         .fontSize(8)
         .font('Helvetica-Oblique')
         .fillColor('gray')
         .text(
           'This is a computer-generated clinical summary. For medical decisions, please consult with your healthcare provider.',
-          {
-            align: 'center',
-          }
+          { align: 'center' }
         );
 
       doc.end();
@@ -1904,13 +1784,12 @@ export const generateClinicalSummaryPDFService = async (
     }
   });
 };
+
 export const generateAIClinicalNarrativeService = async (
   userId: string
 ): Promise<string> => {
-  // Get the detailed summary data
   const summaryData = await getDetailedClinicalSummaryService(userId);
 
-  // Create a prompt for Gemini to generate narrative clinical notes
   const prompt = `
 You are a medical professional writing detailed clinical notes. Based on the following patient data, write a comprehensive clinical summary in a professional medical narrative format.
 
@@ -1956,12 +1835,6 @@ ${period.patientFeedback ? `
 - Overall Improvement Trend: ${summaryData.healthProgressionSummary.improvementTrend.trend}
 - Average Improvement Score: ${summaryData.healthProgressionSummary.improvementTrend.overallScore}/5
 
-**Test Results:**
-${summaryData.testResultsSummary.map(test => `
-- ${test.testType}:
-${test.results.map(r => `  * ${new Date(r.date).toLocaleDateString()}: ${r.resultSummary || r.status}`).join('\n')}
-`).join('\n')}
-
 **Medication Analysis:**
 Top Medications:
 ${summaryData.medicationAnalysis.slice(0, 10).map(med => `
@@ -1985,7 +1858,7 @@ Write in a professional medical tone suitable for clinical documentation. Use pr
 `;
 
   try {
-    const narrativeText = await callGroq(prompt, 2048);
+    const narrativeText = await callGroq(prompt, "2048");
     return narrativeText;
   } catch (error) {
     if (error instanceof Error) {
@@ -1993,9 +1866,9 @@ Write in a professional medical tone suitable for clinical documentation. Use pr
     }
     throw new Error("Clinical narrative generation failed: Unknown error");
   }
- };
+};
 
-  export const getSideEffectCheckerService = async (userId: string): Promise<string> => {
+export const getSideEffectCheckerService = async (userId: string): Promise<string> => {
   const prescriptions = await PrescriptionModel.find({
     userId: new Types.ObjectId(userId),
     status: "confirmed",
@@ -2030,8 +1903,8 @@ Write in simple language that any patient in Bangladesh can understand. Be hones
 
 Disclaimer: This analysis is for informational purposes only and is not a substitute for professional medical advice.`;
 
-const result = await callGroq(prompt, 2048);
-return result;
+  const result = await callGroq(prompt, "2048");
+  return result;
 };
 
 export const getHealthTimelineService = async (userId: string): Promise<string> => {
@@ -2069,7 +1942,7 @@ Generate a chronological health timeline that:
 
 Write in simple language. Be empathetic and supportive in tone.`;
 
-  const result = await callGroq(prompt, 2048);
+  const result = await callGroq(prompt, "2048");
   return result;
 };
 
@@ -2123,7 +1996,6 @@ End with this disclaimer: "This document is AI-generated for informational purpo
 
 Write professionally but in language patients can understand.`;
 
-  const result = await callGroq(prompt, 3000);
+  const result = await callGroq(prompt, "2048");
   return result;
 };
-

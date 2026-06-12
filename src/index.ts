@@ -3,8 +3,7 @@ import { runStartupTasks } from "./bootstrap/startup";
 import { appConfig } from "./config/app.config";
 import { connectDatabase } from "./config/db.config";
 import { initializeFirebase } from "./services/notification.service";
-import cron from "node-cron";
-import { runRemindersForTimeSlot, runCleanupJobs } from "./jobs/reminderScheduler";
+import cron from "node-cron";import { runRemindersForTimeSlot, runCleanupJobs, runAutoMarkMissed } from "./jobs/reminderScheduler";
 
 const startServer = async () => {
   await runStartupTasks();
@@ -19,9 +18,14 @@ const startServer = async () => {
 
   // Cron scheduler - Asia/Dhaka timezone
   cron.schedule('0 8 * * *', () => runRemindersForTimeSlot('morning'), { timezone: 'Asia/Dhaka' });
-  cron.schedule('0 14 * * *', () => runRemindersForTimeSlot('noon'), { timezone: 'Asia/Dhaka' });
+  cron.schedule('0 13 * * *', () => runRemindersForTimeSlot('noon'), { timezone: 'Asia/Dhaka' });
   cron.schedule('0 20 * * *', () => runRemindersForTimeSlot('night'), { timezone: 'Asia/Dhaka' });
   cron.schedule('0 0 * * *', () => runCleanupJobs(), { timezone: 'Asia/Dhaka' });
+  // Auto mark missed medicines — runs every hour
+cron.schedule('0 * * * *', () => runAutoMarkMissed(), { timezone: 'Asia/Dhaka' });
+
+// End of day — mark all remaining pending as missed at 11:00 PM
+cron.schedule('0 23 * * *', () => runAutoMarkMissed(), { timezone: 'Asia/Dhaka' });
   console.log("⏰ Reminder scheduler started");
 
   app.listen(appConfig.PORT, () => {

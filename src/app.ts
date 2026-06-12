@@ -12,6 +12,7 @@ import prescriptionRoutes from "./routes/prescription.route";
 import fcmRoutes from "./routes/fcm.route";
 import testNotificationRoutes from "./routes/notificationTest.route";
 import { runRemindersForTimeSlot, runCleanupJobs } from "./jobs/reminderScheduler";
+import dailyLogRouter from "./routes/dailyLog.route";
 
 const app = express();
 
@@ -20,6 +21,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
+app.use("/api/daily-log", dailyLogRouter);
 
 // Passport
 setupPassport();
@@ -119,6 +121,17 @@ app.post("/cron/cleanup", async (_req, res) => {
       error: "Failed to run cleanup",
       timestamp: new Date().toISOString()
     });
+  }
+});
+
+// Auto mark missed medicines — call every hour
+app.post("/cron/mark-missed", async (_req, res) => {
+  try {
+    const { runAutoMarkMissed } = await import("./jobs/reminderScheduler.js");
+    const count = await runAutoMarkMissed();
+    res.status(200).json({ success: true, missedCount: count });
+  } catch (err) {
+    res.status(500).json({ success: false, error: "Failed to mark missed" });
   }
 });
 
