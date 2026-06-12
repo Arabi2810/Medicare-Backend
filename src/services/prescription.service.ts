@@ -139,7 +139,7 @@ export const prescriptionParseService = async (
     }
 
     try {
-      const responseText = await callGroq(prompt, "8000");
+      const responseText = await callGroq(prompt, undefined, { timeoutMs: 30000 });
 
       let parsedData: any;
       try {
@@ -302,23 +302,27 @@ export const prescriptionUpdateService = async (
 
   Object.assign(prescription, updateData);
   prescription.parsedAt = new Date();
+  prescription.markModified('medicines');
+  prescription.markModified('tests');
 
   const updatedPrescription = await prescription.save();
 
-  if (updatedPrescription.isCurrent && updatedPrescription.medicines.length > 0) {
-    try {
-      await ReminderModel.deleteMany({
-        prescriptionId: new Types.ObjectId(prescriptionId),
-      });
+  try {
+    // Always clear old reminders for this prescription first
+    await ReminderModel.deleteMany({
+      prescriptionId: new Types.ObjectId(prescriptionId),
+    });
 
+    // Recreate only if current and there are medicines
+    if (updatedPrescription.isCurrent && updatedPrescription.medicines.length > 0) {
       await createRemindersForMedicines(
         prescriptionId,
         userId,
         updatedPrescription.medicines
       );
-    } catch (error) {
-      console.error("Failed to update reminders:", error);
     }
+  } catch (error) {
+    console.error("Failed to update reminders:", error);
   }
 
   return updatedPrescription;
@@ -1861,10 +1865,12 @@ Please write a detailed, professional clinical narrative summary (500-800 words)
 6. Provides clinical insights and potential recommendations for ongoing care
 
 Write in a professional medical tone suitable for clinical documentation. Use proper medical terminology and maintain HIPAA-compliant language.
+
+IMPORTANT: Write the ENTIRE response in English only. Do not use Bangla.
 `;
 
   try {
-    const narrativeText = await callGroq(prompt, "2048");
+    const narrativeText = await callGroq(prompt, undefined, { timeoutMs: 30000 });
     return narrativeText;
   } catch (error) {
     if (error instanceof Error) {
@@ -1907,9 +1913,11 @@ Perform a Side Effect and Drug Interaction Analysis:
 
 Write in simple language that any patient in Bangladesh can understand. Be honest and direct.
 
+IMPORTANT: Write the ENTIRE response in English only. Do not use Bangla.
+
 Disclaimer: This analysis is for informational purposes only and is not a substitute for professional medical advice.`;
 
-  const result = await callGroq(prompt, "2048");
+  const result = await callGroq(prompt, undefined, { timeoutMs: 30000 });
   return result;
 };
 
@@ -1946,7 +1954,9 @@ Generate a chronological health timeline that:
 4. **Health Trends**: Is the patient's overall health improving, stable, or declining based on the data?
 5. **Key Milestones**: Highlight important health events (new diagnosis, completed treatment, etc).
 
-Write in simple language. Be empathetic and supportive in tone.`;
+Write in simple language. Be empathetic and supportive in tone.
+
+IMPORTANT: Write the ENTIRE response in English only. Do not use Bangla.`;
 
   const result = await callGroq(prompt, "2048");
   return result;
@@ -2000,7 +2010,9 @@ Generate a structured Clinical Documentation with these sections:
 
 End with this disclaimer: "This document is AI-generated for informational purposes only. All medical decisions must be made by a licensed healthcare professional."
 
-Write professionally but in language patients can understand.`;
+Write professionally but in language patients can understand.
+
+IMPORTANT: Write the ENTIRE response in English only. Do not use Bangla.`;
 
   const result = await callGroq(prompt, "2048");
   return result;

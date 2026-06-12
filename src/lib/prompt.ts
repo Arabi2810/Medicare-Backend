@@ -50,8 +50,8 @@ Return JSON with EXACTLY this structure:
     {
       "name": "exact test name from prescription",
       "type": "lab test type/category if identifiable or null",
-      "testDefinition": "Explain in simple everyday language what this test is and what it examines or measures in the human body. Write as if explaining to someone with no medical knowledge. Example: A CBC test checks your blood by counting red blood cells, white blood cells and platelets. It helps doctors find infections, anemia and other blood-related problems.",
-      "patientRelevance": "Based on this patient's specific symptoms and diagnosis: If the test is needed — explain why the doctor ordered it, what they are trying to detect, and why the patient should take it. If the test is NOT needed — clearly explain that this test has no clear connection to the patient's condition and the patient can likely skip it. Be direct and honest in simple language.",
+      "testDefinition": "ONE short sentence (max 20 words) explaining what this test checks, in simple language.",
+      "patientRelevance": "ONE short sentence (max 25 words): why this test relates (or doesn't) to this patient's symptoms/diagnosis.",
       "validityLevel": "essential or moderate or unnecessary"
     }
   ],
@@ -67,20 +67,8 @@ Return JSON with EXACTLY this structure:
   "notes": "any additional notes, warnings, precautions, or allergies mentioned or null"
 }
 
-FOR EACH TEST analyze in this exact order:
-1. testDefinition: What is this test? What does it measure in the human body? (simple language, no jargon)
-2. patientRelevance: Is this test relevant for THIS patient?
-   - If YES: Explain why the doctor ordered it and what they are trying to find for this patient specifically.
-   - If NO: Clearly tell the patient this test seems unrelated to their condition and they may not need it.
-3. validityLevel: Final verdict — "essential", "moderate", or "unnecessary"
-
-STRICT RULES for validityLevel:
-- "essential": Test is directly required to diagnose or monitor this patient. Skipping risks missing critical information.
-- "moderate": Test gives useful extra information but is not strictly required. Good to take but can be skipped if cost is a concern.
-- "unnecessary": Test has no clear link to this patient's symptoms or diagnosis. Likely not needed.
-
-Always write in simple language a normal person in Bangladesh can understand. Avoid complex medical jargon.
-Always base validity on the patient's specific symptoms and diagnosis. If patient profile is provided, use it to improve accuracy.
+Keep testDefinition and patientRelevance to ONE short sentence each, in simple language a normal person in Bangladesh can understand.
+validityLevel rules: "essential" = directly needed for this patient's symptoms/diagnosis. "moderate" = useful but optional. "unnecessary" = unrelated to this patient.
 
 Prescription Text:
 ${text}`;

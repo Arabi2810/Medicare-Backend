@@ -94,7 +94,7 @@ export async function callGroq(
           model: GROQ_MODEL,
           messages,
           temperature: 0.1,
-          max_tokens: 4096,
+          max_tokens: 1800,
         },
         { signal: controller.signal as any },
       );
