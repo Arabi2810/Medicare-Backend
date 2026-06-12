@@ -168,7 +168,13 @@ export const prescriptionParseService = async (
       parsedData.diagnosis = [...new Set(parsedData.diagnosis.filter(Boolean))];
 
       return parsedData as ParsedPrescription;
+
     } catch (error) {
+      // Rate limit: fail immediately, don't waste retries
+      if (error instanceof Error && error.message.startsWith('RATE_LIMIT')) {
+        throw new Error("AI quota exhausted. Please try again in a few hours.");
+      }
+      // Schema validation: fail immediately
       if (error instanceof Error && error.message.includes('schema')) {
         throw error;
       }

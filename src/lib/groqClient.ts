@@ -112,10 +112,9 @@ export async function callGroq(
         throw new Error(`Groq request timed out after ${timeoutMs}ms`);
       }
 
-      // Rate limit (429) — wait longer then retry
+      // Rate limit (429) — daily quota exhausted, fail immediately, don't waste tokens retrying
       if (err?.status === 429) {
-        await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
-        continue;
+        throw new Error('RATE_LIMIT: AI service quota exhausted. Please try again in a few hours.');
       }
 
       // 5xx — retry
