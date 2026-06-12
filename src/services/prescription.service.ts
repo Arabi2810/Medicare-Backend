@@ -1985,34 +1985,64 @@ export const getCaseDocumentationService = async (userId: string): Promise<strin
     p.tests.forEach((t) => allTests.add(t.name));
   });
 
-  const prompt = `Act as a Senior Medical Scribe. Generate a comprehensive Clinical Case Documentation for this patient.
+const chronological = [...prescriptions].sort(
+    (a, b) => new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime()
+  );
 
-Patient Data:
-- Name: ${latestPrescription.patient?.name || "N/A"}
-- Age: ${latestPrescription.patient?.age || "N/A"}
-- Gender: ${latestPrescription.patient?.gender || "N/A"}
-- Total Prescriptions: ${prescriptions.length}
-- First Visit: ${prescriptions[prescriptions.length - 1]?.uploadedAt}
-- Latest Visit: ${latestPrescription.uploadedAt}
-- All Diagnoses: ${[...allDiagnoses].join(", ")}
-- All Symptoms: ${[...allSymptoms].join(", ")}
-- All Medicines Ever Taken: ${[...allMedicines].join(", ")}
-- All Tests Done: ${[...allTests].join(", ")}
-- Referring Doctors: ${[...new Set(prescriptions.map(p => p.doctor?.name).filter(Boolean))].join(", ")}
+  const visitsData = chronological.map((p, i) => ({
+    visitNumber: i + 1,
+    date: new Date(p.uploadedAt).toLocaleDateString(),
+    doctor: p.doctor?.name || "Unknown",
+    specialization: p.doctor?.specialization || "N/A",
+    symptoms: p.symptoms,
+    diagnosis: p.diagnosis,
+    medicines: p.medicines.map((m: any) => `${m.name}${m.dosage ? ` (${m.dosage}${m.frequency ? `, ${m.frequency}` : ''}${m.duration ? `, ${m.duration}` : ''})` : ''}`),
+    tests: p.tests.map((t: any) => `${t.name}${t.status === 'completed' && t.resultSummary ? ` - Result: ${t.resultSummary}` : ' (pending)'}`),
+  }));
 
-Generate a structured Clinical Documentation with these sections:
-## Patient Identification
-## Encounter Details  
-## Clinical History
-## Current Status
-## Assessment & Plan
-## Prognosis
+  const feedbacks = await PrescriptionFeedbackModel.find({
+    prescriptionId: { $in: chronological.map((p) => p._id) }
+  }).lean();
 
-End with this disclaimer: "This document is AI-generated for informational purposes only. All medical decisions must be made by a licensed healthcare professional."
+  const feedbackByPrescription = new Map(
+    feedbacks.map((f: any) => [f.prescriptionId.toString(), f])
+  );
 
-Write professionally but in language patients can understand.
+  const prompt = `Act as a Senior Medical Scribe. Generate a complete Health Record for this patient as a chronological log of doctor visits.
 
-IMPORTANT: Write the ENTIRE response in English only. Do not use Bangla.`;
+  Patient: ${latestPrescription.patient?.name || "N/A"}, Age: ${latestPrescription.patient?.age || "N/A"}, Gender: ${latestPrescription.patient?.gender || "N/A"}
+
+  For EACH visit below, write a block in EXACTLY this format (no extra headers, no markdown tables):
+
+  Visit [N] - [Date] - Dr. [Doctor Name] ([Specialization])
+  Symptoms: [list symptoms]
+  Diagnosis: [list diagnoses]
+  Medicines Prescribed: [list medicines with dosage]
+  Tests: [list tests and results if completed]
+  Patient Feedback: [if available, describe how the patient felt after this visit - improvement, side effects, current condition. If not available, write "No feedback recorded."]
+
+  Leave one blank line between each visit block. Visits must appear in chronological order, oldest first.
+
+  Visit Data:
+  ${visitsData.map(v => {
+    const pres = chronological[v.visitNumber - 1];
+    const fb = feedbackByPrescription.get(pres._id.toString());
+    return `
+  Visit ${v.visitNumber}:
+  - Date: ${v.date}
+  - Doctor: ${v.doctor} (${v.specialization})
+  - Symptoms: ${v.symptoms.join(', ') || 'None recorded'}
+  - Diagnosis: ${v.diagnosis.join(', ') || 'None recorded'}
+  - Medicines: ${v.medicines.join(', ') || 'None recorded'}
+  - Tests: ${v.tests.join(', ') || 'None recorded'}
+    - Feedback: ${fb ? `Improvement ${fb?.overallImprovement ?? 'N/A'}/5, Symptom Relief ${fb?.symptomRelief ?? 'N/A'}/5, Current Condition: ${fb?.healthConditionNow ?? 'N/A'}, Side Effects: ${fb?.sideEffectsDescription || 'none reported'}` : 'Not available'}
+  `;
+  }).join('\n')}
+
+  After listing all visits, end with this exact disclaimer on its own line: "This document is AI-generated for informational purposes only. All medical decisions must be made by a licensed healthcare professional."
+
+  IMPORTANT: Write the ENTIRE response in English only. Do not use Bangla. Keep language simple and direct, no medical jargon overload.`;
+
 
   const result = await callGroq(prompt, "2048");
   return result;
