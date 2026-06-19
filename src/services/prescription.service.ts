@@ -15,6 +15,42 @@ import { PrescriptionFeedbackModel } from "../models/PrescriptionFeedback.model"
 import PDFDocument from 'pdfkit';
 import { callGroq } from "../lib/groqClient";
 
+const analyzeTestService = async (
+  testName: string,
+  testType: string | null,
+  symptoms: string[],
+  diagnosis: string[]
+): Promise<{ testDefinition: string; patientRelevance: string; validityLevel: string }> => {
+  const prompt = `A patient has these symptoms: ${symptoms.join(', ') || 'none reported'} and diagnosis: ${diagnosis.join(', ') || 'none reported'}.
+
+A test named "${testName}"${testType ? ` (type: ${testType})` : ''} needs to be analyzed.
+
+Return ONLY a JSON object with this exact structure, no markdown, no explanation:
+{
+  "testDefinition": "ONE short sentence (max 20 words) explaining what this test checks, in simple language.",
+  "patientRelevance": "ONE short sentence (max 25 words): why this test relates (or doesn't) to this patient's symptoms/diagnosis.",
+  "validityLevel": "essential or moderate or unnecessary"
+}
+
+IMPORTANT: Respond in English only.`;
+
+  try {
+    const raw = await callGroq(prompt, undefined, { timeoutMs: 20000, maxRetries: 1 });
+    let cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    cleaned = cleaned.slice(firstBrace, lastBrace + 1).replace(/,\s*([\]}])/g, '$1');
+    const parsed = JSON.parse(cleaned);
+    return {
+      testDefinition: parsed.testDefinition || null,
+      patientRelevance: parsed.patientRelevance || null,
+      validityLevel: parsed.validityLevel || null,
+    };
+  } catch (e) {
+    console.warn('Test analysis failed:', e);
+    return { testDefinition: null as any, patientRelevance: null as any, validityLevel: null as any };
+  }
+};
 export const createRemindersForPrescription = async (
   prescription: any,
   userId: string
@@ -299,9 +335,26 @@ export const prescriptionUpdateService = async (
   if (!prescription) {
     throw new Error("Prescription not found or access denied");
   }
-
   Object.assign(prescription, updateData);
   prescription.parsedAt = new Date();
+
+
+  if (prescription.tests && prescription.tests.length > 0) {
+    for (const test of prescription.tests as any[]) {
+      if (test.name && !test.validityLevel) {
+        const analysis = await analyzeTestService(
+          test.name,
+          test.type || null,
+          prescription.symptoms || [],
+          prescription.diagnosis || []
+        );
+        test.testDefinition = analysis.testDefinition;
+        test.patientRelevance = analysis.patientRelevance;
+        test.validityLevel = analysis.validityLevel;
+      }
+    }
+  }
+
   prescription.markModified('medicines');
   prescription.markModified('tests');
 
