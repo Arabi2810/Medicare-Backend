@@ -30,9 +30,12 @@ import {
    getDetailedClinicalSummaryService,
    generateClinicalSummaryPDFService,
    generateAIClinicalNarrativeService,
-   getSideEffectCheckerService,
+  getSideEffectCheckerService,
   getHealthTimelineService,
   getCaseDocumentationService,
+  generateSideEffectsPDFService,
+  generateHealthTimelinePDFService,
+  generateCaseDocumentationPDFService,
 } from "../services/prescription.service";
 import { ReminderModel } from "../models/reminder.model";
 
@@ -746,6 +749,69 @@ export const downloadClinicalSummaryPDFController = async (
     throw error;
   }
 };
+export const downloadSideEffectsPDFController = async (
+  req: Request,
+  res: Response
+) => {
+  if (!req.userId) {
+    throw createServiceError("User not authenticated", 401);
+  }
+  try {
+    const pdfBuffer = await generateSideEffectsPDFService(req.userId);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=side-effects-${Date.now()}.pdf`
+    );
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const downloadHealthTimelinePDFController = async (
+  req: Request,
+  res: Response
+) => {
+  if (!req.userId) {
+    throw createServiceError("User not authenticated", 401);
+  }
+  try {
+    const pdfBuffer = await generateHealthTimelinePDFService(req.userId);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=analytics-${Date.now()}.pdf`
+    );
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const downloadCaseDocumentationPDFController = async (
+  req: Request,
+  res: Response
+) => {
+  if (!req.userId) {
+    throw createServiceError("User not authenticated", 401);
+  }
+  try {
+    const pdfBuffer = await generateCaseDocumentationPDFService(req.userId);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=health-record-${Date.now()}.pdf`
+    );
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (error) {
+    throw error;
+  }
+};
+
 export const getSideEffectCheckerController = async (req: Request, res: Response) => {
   if (!req.userId) throw createServiceError("User not authenticated", 401);
   const result = await getSideEffectCheckerService(req.userId);

@@ -1848,6 +1848,142 @@ export const generateClinicalSummaryPDFService = async (
   });
 };
 
+// Shared PDF renderer for markdown-formatted AI text (Side Effects, Analytics, Health Record)
+const renderMarkdownToPDF = (doc: PDFKit.PDFDocument, text: string) => {
+  const lines = text.split('\n');
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+
+    if (!line) {
+      doc.moveDown(0.4);
+      continue;
+    }
+
+    // ## H2
+    if (line.startsWith('## ')) {
+      doc
+        .moveDown(0.5)
+        .fontSize(14)
+        .font('Helvetica-Bold')
+        .fillColor('black')
+        .text(line.slice(3))
+        .moveDown(0.3);
+      continue;
+    }
+
+    // ### H3
+    if (line.startsWith('### ')) {
+      doc
+        .moveDown(0.3)
+        .fontSize(12)
+        .font('Helvetica-Bold')
+        .fillColor('black')
+        .text(line.slice(4))
+        .moveDown(0.2);
+      continue;
+    }
+
+    // Bullet list (* or -)
+    if (line.startsWith('* ') || line.startsWith('- ')) {
+      const content = line.slice(2).replace(/\*\*(.*?)\*\*/g, '$1');
+      doc
+        .fontSize(11)
+        .font('Helvetica')
+        .fillColor('black')
+        .text(`•  ${content}`, { indent: 10, lineGap: 3 });
+      continue;
+    }
+
+    // Numbered list
+    const numberedMatch = line.match(/^(\d+)\.\s+(.*)/);
+    if (numberedMatch) {
+      const content = numberedMatch[2].replace(/\*\*(.*?)\*\*/g, '$1');
+      doc
+        .fontSize(11)
+        .font('Helvetica')
+        .fillColor('black')
+        .text(`${numberedMatch[1]}.  ${content}`, { indent: 10, lineGap: 3 });
+      continue;
+    }
+
+    // Regular paragraph (strip bold markers, pdfkit doesn't support inline bold mid-string easily)
+    const content = line.replace(/\*\*(.*?)\*\*/g, '$1');
+    doc
+      .fontSize(11)
+      .font('Helvetica')
+      .fillColor('black')
+      .text(content, { align: 'justify', lineGap: 4 })
+      .moveDown(0.2);
+  }
+};
+
+const buildStyledPDF = (title: string, bodyText: string): Promise<Buffer> => {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({
+        size: 'A4',
+        margins: { top: 50, bottom: 50, left: 50, right: 50 },
+      });
+
+      const buffers: Buffer[] = [];
+      doc.on('data', buffers.push.bind(buffers));
+      doc.on('end', () => resolve(Buffer.concat(buffers)));
+
+      doc
+        .fontSize(22)
+        .font('Helvetica-Bold')
+        .fillColor('black')
+        .text(title, { align: 'center' })
+        .moveDown(0.5);
+
+      doc
+        .fontSize(10)
+        .font('Helvetica')
+        .fillColor('black')
+        .text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' })
+        .moveDown(0.5);
+
+      doc
+        .moveTo(50, doc.y)
+        .lineTo(545, doc.y)
+        .stroke()
+        .moveDown(1);
+
+      renderMarkdownToPDF(doc, bodyText);
+
+      doc.moveDown(2);
+      doc
+        .fontSize(8)
+        .font('Helvetica-Oblique')
+        .fillColor('gray')
+        .text(
+          'This is a computer-generated report. For medical decisions, please consult with your healthcare provider.',
+          { align: 'center' }
+        );
+
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+};
+
+export const generateSideEffectsPDFService = async (userId: string): Promise<Buffer> => {
+  const text = await getSideEffectCheckerService(userId);
+  return buildStyledPDF('Side Effect and Drug Interaction Analysis', text);
+};
+
+export const generateHealthTimelinePDFService = async (userId: string): Promise<Buffer> => {
+  const text = await getHealthTimelineService(userId);
+  return buildStyledPDF('Health Analytics Report', text);
+};
+
+export const generateCaseDocumentationPDFService = async (userId: string): Promise<Buffer> => {
+  const text = await getCaseDocumentationService(userId);
+  return buildStyledPDF('Complete Health Record', text);
+};
+
 export const generateAIClinicalNarrativeService = async (
   userId: string
 ): Promise<string> => {

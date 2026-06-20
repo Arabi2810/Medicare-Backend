@@ -27,6 +27,9 @@ import {
   updateReminderController,
 
   downloadClinicalSummaryPDFController,
+  downloadSideEffectsPDFController,
+  downloadHealthTimelinePDFController,
+  downloadCaseDocumentationPDFController,
   getClinicalSummaryController,
   getSideEffectCheckerController,
   getHealthTimelineController,
@@ -64,8 +67,11 @@ router.get("/clinical-summary", getClinicalSummaryController);
 router.get("/clinical-summary/pdf", downloadClinicalSummaryPDFController);
 // Upload and parse prescription (returns parsed data for user to review)
 router.get("/side-effects", getSideEffectCheckerController);
+router.get("/side-effects/pdf", downloadSideEffectsPDFController);
 router.get("/health-timeline", getHealthTimelineController);
+router.get("/health-timeline/pdf", downloadHealthTimelinePDFController);
 router.get("/case-documentation", getCaseDocumentationController);
+router.get("/case-documentation/pdf", downloadCaseDocumentationPDFController);
 router.post("/upload", upload.single("prescription"), prescriptionUploadController);
 
 // ============================================
@@ -162,43 +168,5 @@ router.get("/:id", prescriptionGetByIdController);
 
 // Get prescription details (detailed view with reminders, tests, feedback)
 router.get("/:id/details", prescriptionGetDetailsController);
-
-// ============================================
-// NEW ROUTES - TEST TRACKING (duplicate section from above)
-// ============================================
-
-// Get all pending tests for user
-router.get("/tests/pending", getPendingTestsController);
-
-// Get all completed tests for user
-router.get("/tests/completed", getCompletedTestsController);
-
-// Get test statistics
-router.get("/tests/stats", getTestStatsController);
-
-// Get all tests for a specific prescription
-router.get("/:prescriptionId/tests", getPrescriptionTestsController);
-
-// Mark test as completed and upload report
-router.patch("/:prescriptionId/tests/:testId/complete", completeTestController);
-
-// Cancel a test
-router.patch("/:prescriptionId/tests/:testId/cancel", cancelTestController);
-
-// Check if all tests are completed for a prescription
-router.get("/:prescriptionId/tests/all-completed", checkAllTestsCompletedController);
-
-// ============================================
-// NEW ROUTES - PRESCRIPTION COMPLETION & FEEDBACK (duplicate section from above)
-// ============================================
-
-// Complete prescription with feedback survey
-router.post("/:prescriptionId/complete", completePrescriptionController);
-
-// Get feedback for a specific prescription
-router.get("/:prescriptionId/feedback", getPrescriptionFeedbackController);
-
-// Get clinical summary report
-
 
 export default router;
