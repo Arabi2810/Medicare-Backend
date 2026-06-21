@@ -10,7 +10,7 @@ export interface IDoctorInfo {
 export interface IPatientInfo {
   name: string | null;
   age: string | null;
-  gender: "M" | "F" | null;
+  gender: string | null;
   contact: string | null;
   registrationNumber: string | null;
 }
@@ -80,7 +80,6 @@ const PatientInfoSchema = new Schema<IPatientInfo>(
     age: { type: String, default: null },
     gender: {
       type: String,
-      enum: ["M", "F", null],
       default: null,
     },
     contact: { type: String, default: null },

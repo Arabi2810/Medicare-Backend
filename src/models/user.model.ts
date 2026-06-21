@@ -12,7 +12,7 @@ export interface IDeviceToken {
 export interface IUserProfile {
   dateOfBirth?: string | null;
   bloodGroup?: "A+" | "A-" | "B+" | "B-" | "AB+" | "AB-" | "O+" | "O-" | null;
-  gender?: "M" | "F" | "Other" | null;
+  gender?: string | null;
   height?: string | null;
   weight?: string | null;
   allergies: string[];
@@ -61,9 +61,8 @@ const UserProfileSchema = new Schema<IUserProfile>(
       enum: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", null],
       default: null,
     },
-    gender: {
+   gender: {
       type: String,
-      enum: ["M", "F", "Other", null],
       default: null,
     },
     height: { type: String, default: null },
